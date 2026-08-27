@@ -10,8 +10,8 @@ local Nexus = {
         -- Player
         GodMode = false,
         InfiniteJump = false,
-        WalkSpeed = 16,
-        JumpPower = 50,
+        WalkSpeed = 70,
+        JumpPower = 70,
         
         -- Visuals
         BoxESP = false,
