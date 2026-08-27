@@ -652,13 +652,7 @@ function NexusUI:CreateDropdown(tab, text, options, defaultIdx, callback)
         if forceClose and not open then return end
         open = (not forceClose) and (not open)
 
-        -- ═══════════════════════════════════════════════════════════════
-        -- ФИКС v1.4: при ZIndexBehavior.Sibling ZIndex ddFrame (=10) важен
-        -- только внутри f. Чтобы ddFrame рендерился ПОВЕРХ соседних элементов
-        -- (кнопки Rejoin и т.д.), нужно поднять ZIndex САМОГО f — родителя.
-        -- Все остальные элементы имеют ZIndex=1, ставим 50 — гарантированно поверх.
-        -- При закрытии возвращаем обратно, чтобы не ломать порядок остальных.
-        -- ═══════════════════════════════════════════════════════════════
+        -- Фикс v1.4: поднимаем ZIndex родителя, чтобы список был поверх соседей
         f.ZIndex = open and 50 or 1
 
         if activeSizeTween then
@@ -669,7 +663,6 @@ function NexusUI:CreateDropdown(tab, text, options, defaultIdx, callback)
         local neededHeight = math.min(#options * 28, 140)
 
         if open then
-            -- Проверяем, хватит ли места снизу. Если нет — открываем вверх.
             local fBottom = f.AbsolutePosition.Y + f.AbsoluteSize.Y
             local contentBottom = self.ContentArea.AbsolutePosition.Y + self.ContentArea.AbsoluteSize.Y
             local spaceBelow = contentBottom - fBottom
@@ -695,12 +688,10 @@ function NexusUI:CreateDropdown(tab, text, options, defaultIdx, callback)
         end
     end
 
-    -- Регистрируем функцию закрытия для принудительного закрытия
     table.insert(self.OpenDropdowns, function(force)
         if force and open then toggle(true) end
     end)
 
-    -- Закрытие по клику вне дропдауна
     UserInputService.InputBegan:Connect(function(input, gameProcessed)
         if not open then return end
         if not IsPress(input) then return end
@@ -842,48 +833,125 @@ function NexusUI:SetupToggleKey()
 end
 
 -- ═══════════════════════════════════════════════════════════════
--- DEMO TABS
+-- BUILD TABS (С ПРИВЯЗКОЙ К Scripts)
 -- ═══════════════════════════════════════════════════════════════
 
 function NexusUI:BuildTabs()
+    -- Убедитесь, что глобальная таблица Scripts существует
+    -- Пример: _G.Scripts = { Settings = {...}, ResetCharacter = function() ... end, RejoinServer = function() ... end }
+    local Scripts = _G.Scripts or {}
+
     local combat = self:CreateTab("Combat", "⚔")
     self:CreateSection(combat, "Combat Features")
-    self:CreateToggle(combat, "Aimbot", false, function(v) print("Aimbot:", v) end)
-    self:CreateToggle(combat, "Silent Aim", false, function(v) print("Silent Aim:", v) end)
-    self:CreateToggle(combat, "Auto Shoot", false, function(v) print("Auto Shoot:", v) end)
-    self:CreateSlider(combat, "FOV Size", 30, 300, 100, function(v) print("FOV:", v) end)
-    self:CreateDropdown(combat, "Target Part", {"Head", "Torso", "HumanoidRootPart"}, 1, function(v) print("Target:", v) end)
+
+    self:CreateToggle(combat, "Aimbot", Scripts.Settings and Scripts.Settings.Aimbot or false, function(v)
+        if Scripts.Settings then Scripts.Settings.Aimbot = v end
+    end)
+
+    self:CreateToggle(combat, "Silent Aim", Scripts.Settings and Scripts.Settings.SilentAim or false, function(v)
+        if Scripts.Settings then Scripts.Settings.SilentAim = v end
+    end)
+
+    self:CreateToggle(combat, "Auto Shoot", Scripts.Settings and Scripts.Settings.AutoShoot or false, function(v)
+        if Scripts.Settings then Scripts.Settings.AutoShoot = v end
+    end)
+
+    self:CreateSlider(combat, "FOV Size", 30, 300, Scripts.Settings and Scripts.Settings.FOV or 100, function(v)
+        if Scripts.Settings then Scripts.Settings.FOV = v end
+    end)
+
+    self:CreateDropdown(combat, "Target Part", {"Head", "Torso", "HumanoidRootPart"}, 1, function(opt, idx)
+        if Scripts.Settings then Scripts.Settings.TargetPart = opt end
+    end)
 
     local player = self:CreateTab("Player", "👤")
     self:CreateSection(player, "Character")
-    self:CreateToggle(player, "God Mode", false, function(v) print("God Mode:", v) end)
-    self:CreateToggle(player, "Infinite Jump", false, function(v) print("Inf Jump:", v) end)
-    self:CreateSlider(player, "WalkSpeed", 16, 200, 16, function(v) print("Speed:", v) end)
-    self:CreateSlider(player, "JumpPower", 50, 300, 50, function(v) print("Jump:", v) end)
-    self:CreateButton(player, "Reset Character", function() print("Reset!") end)
+
+    self:CreateToggle(player, "God Mode", Scripts.Settings and Scripts.Settings.GodMode or false, function(v)
+        if Scripts.Settings then Scripts.Settings.GodMode = v end
+    end)
+
+    self:CreateToggle(player, "Infinite Jump", Scripts.Settings and Scripts.Settings.InfiniteJump or false, function(v)
+        if Scripts.Settings then Scripts.Settings.InfiniteJump = v end
+    end)
+
+    self:CreateSlider(player, "WalkSpeed", 16, 200, Scripts.Settings and Scripts.Settings.WalkSpeed or 16, function(v)
+        if Scripts.Settings then Scripts.Settings.WalkSpeed = v end
+    end)
+
+    self:CreateSlider(player, "JumpPower", 50, 300, Scripts.Settings and Scripts.Settings.JumpPower or 50, function(v)
+        if Scripts.Settings then Scripts.Settings.JumpPower = v end
+    end)
+
+    self:CreateButton(player, "Reset Character", function()
+        if Scripts.ResetCharacter then Scripts.ResetCharacter() end
+    end)
 
     local visuals = self:CreateTab("Visuals", "👁")
     self:CreateSection(visuals, "ESP")
-    self:CreateToggle(visuals, "Box ESP", false, function(v) print("Box:", v) end)
-    self:CreateToggle(visuals, "Skeleton ESP", false, function(v) print("Skeleton:", v) end)
-    self:CreateToggle(visuals, "Name ESP", false, function(v) print("Name:", v) end)
-    self:CreateToggle(visuals, "Tracers", false, function(v) print("Tracers:", v) end)
-    self:CreateSlider(visuals, "Max Distance", 100, 5000, 1000, function(v) print("Distance:", v) end)
+
+    self:CreateToggle(visuals, "Box ESP", Scripts.Settings and Scripts.Settings.BoxESP or false, function(v)
+        if Scripts.Settings then Scripts.Settings.BoxESP = v end
+    end)
+
+    self:CreateToggle(visuals, "Skeleton ESP", Scripts.Settings and Scripts.Settings.SkeletonESP or false, function(v)
+        if Scripts.Settings then Scripts.Settings.SkeletonESP = v end
+    end)
+
+    self:CreateToggle(visuals, "Name ESP", Scripts.Settings and Scripts.Settings.NameESP or false, function(v)
+        if Scripts.Settings then Scripts.Settings.NameESP = v end
+    end)
+
+    self:CreateToggle(visuals, "Tracers", Scripts.Settings and Scripts.Settings.Tracers or false, function(v)
+        if Scripts.Settings then Scripts.Settings.Tracers = v end
+    end)
+
+    self:CreateSlider(visuals, "Max Distance", 100, 5000, Scripts.Settings and Scripts.Settings.MaxDistance or 1000, function(v)
+        if Scripts.Settings then Scripts.Settings.MaxDistance = v end
+    end)
 
     local misc = self:CreateTab("Misc", "⚙")
     self:CreateSection(misc, "Utilities")
-    self:CreateToggle(misc, "Anti-AFK", false, function(v) print("Anti-AFK:", v) end)
-    self:CreateToggle(misc, "Auto-Farm", false, function(v) print("Auto-Farm:", v) end)
-    self:CreateDropdown(misc, "Theme", {"Dark", "Darker", "AMOLED"}, 1, function(v) print("Theme:", v) end)
-    self:CreateButton(misc, "Rejoin Server", function() print("Rejoining...") end)
+
+    self:CreateToggle(misc, "Anti-AFK", Scripts.Settings and Scripts.Settings.AntiAFK or false, function(v)
+        if Scripts.Settings then Scripts.Settings.AntiAFK = v end
+    end)
+
+    self:CreateToggle(misc, "Auto-Farm", Scripts.Settings and Scripts.Settings.AutoFarm or false, function(v)
+        if Scripts.Settings then Scripts.Settings.AutoFarm = v end
+    end)
+
+    self:CreateDropdown(misc, "Theme", {"Dark", "Darker", "AMOLED"}, 1, function(opt, idx)
+        if Scripts.Settings then Scripts.Settings.Theme = opt end
+    end)
+
+    self:CreateButton(misc, "Rejoin Server", function()
+        if Scripts.RejoinServer then Scripts.RejoinServer() end
+    end)
 
     local settings = self:CreateTab("Settings", "🔧")
     self:CreateSection(settings, "Configuration")
-    self:CreateToggle(settings, "Show Keybinds", true, function(v) print("Keybinds:", v) end)
-    self:CreateToggle(settings, "Notifications", true, function(v) print("Notifs:", v) end)
-    self:CreateSlider(settings, "UI Scale", 50, 150, 100, function(v) print("Scale:", v) end)
-    self:CreateButton(settings, "Save Config", function() print("Saved!") end)
-    self:CreateButton(settings, "Load Config", function() print("Loaded!") end)
+
+    self:CreateToggle(settings, "Show Keybinds", Scripts.Settings and Scripts.Settings.ShowKeybinds or true, function(v)
+        if Scripts.Settings then Scripts.Settings.ShowKeybinds = v end
+    end)
+
+    self:CreateToggle(settings, "Notifications", Scripts.Settings and Scripts.Settings.Notifications or true, function(v)
+        if Scripts.Settings then Scripts.Settings.Notifications = v end
+    end)
+
+    self:CreateSlider(settings, "UI Scale", 50, 150, Scripts.Settings and Scripts.Settings.UIScale or 100, function(v)
+        if Scripts.Settings then Scripts.Settings.UIScale = v end
+    end)
+
+    self:CreateButton(settings, "Save Config", function()
+        if Scripts.SaveConfig then Scripts.SaveConfig() end
+    end)
+
+    self:CreateButton(settings, "Load Config", function()
+        if Scripts.LoadConfig then Scripts.LoadConfig() end
+    end)
+
     self:CreateLabel(settings, "RightShift or Insert to toggle UI")
 
     self:SelectTab(combat)
