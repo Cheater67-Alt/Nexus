@@ -1,3 +1,9 @@
+--[[
+    NEXUS SCRIPT — вся логика (Aimbot, Silent Aim, ESP, Misc)
+    Должен быть размещён в LocalScript раньше UI-скрипта.
+    Использует глобальную таблицу _G.Nexus для связи с интерфейсом.
+--]]
+
 local Nexus = {
     Settings = {
         -- Combat
@@ -6,23 +12,23 @@ local Nexus = {
         AutoShoot = false,
         FOVSize = 200,
         TargetPart = "Head",
-        
+
         -- Player
-        GodMode = false,
+        GodMode = false,          -- (пока не реализовано)
         InfiniteJump = false,
         WalkSpeed = 70,
         JumpPower = 70,
-        
+
         -- Visuals
         BoxESP = false,
-        SkeletonESP = false,
+        SkeletonESP = false,      -- (пока не реализовано)
         NameESP = false,
         Tracers = false,
         MaxDistance = 1000,
-        
+
         -- Misc
         AntiAFK = false,
-        AutoFarm = false,
+        AutoFarm = false,         -- (пока не реализовано)
     }
 }
 
@@ -31,13 +37,14 @@ local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
 local UserInputService = game:GetService("UserInputService")
 local TeleportService = game:GetService("TeleportService")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local LocalPlayer = Players.LocalPlayer
 local Camera = workspace.CurrentCamera
+local VirtualUser = game:GetService("VirtualUser")
 
--- ═══════════════════════════════════════════════════════════════
--- COMBAT LOGIC
--- ═══════════════════════════════════════════════════════════════
+-- ================== COMBAT LOGIC ==================
 
+-- Поиск ближайшей цели (используется Aimbot и Silent Aim)
 local function getClosestPlayer()
     local closest, shortestDistance = nil, Nexus.Settings.FOVSize
     local mousePos = UserInputService:GetMouseLocation()
@@ -60,31 +67,146 @@ local function getClosestPlayer()
     return closest
 end
 
--- Camera Aimbot & Auto Shoot Loop
+-- Aimbot и AutoShoot
 RunService.RenderStepped:Connect(function()
-    local target = getClosestPlayer()
-    
-    if target then
-        -- Aimbot (Плавное или прямое наведение камеры)
-        if Nexus.Settings.Aimbot then
-            Camera.CFrame = CFrame.new(Camera.CFrame.Position, target.Position)
-        end
-        
-        -- Auto Shoot
-        if Nexus.Settings.AutoShoot then
-            local tool = LocalPlayer.Character and LocalPlayer.Character:FindFirstChildOfClass("Tool")
-            if tool then
-                tool:Activate()
+    if Nexus.Settings.Aimbot or Nexus.Settings.AutoShoot then
+        local target = getClosestPlayer()
+        if target then
+            if Nexus.Settings.Aimbot then
+                Camera.CFrame = CFrame.new(Camera.CFrame.Position, target.Position)
+            end
+            if Nexus.Settings.AutoShoot then
+                local tool = LocalPlayer.Character and LocalPlayer.Character:FindFirstChildOfClass("Tool")
+                if tool then
+                    tool:Activate()
+                end
             end
         end
     end
 end)
 
--- ═══════════════════════════════════════════════════════════════
--- PLAYER LOGIC
--- ═══════════════════════════════════════════════════════════════
+-- Silent Aim (хук методов оружия + no recoil)
+-- Мы устанавливаем хук один раз, а внутри проверяем настройку SilentAim
+local silentAimInstalled = false
+local weaponModule = nil
+local fireOriginals = {}
+local configOriginals = {}
 
--- Speed & Jump Listener
+local function findWeaponModule()
+    local candidates = {
+        {"WeaponsSystem", "Libraries", "BaseWeapon"},
+        {"WeaponsSystem", "Libraries", "BaseFirearm"},
+        {"WeaponsSystem", "Modules", "BaseWeapon"},
+        {"WeaponsSystem", "Shared", "BaseWeapon"},
+        {"WeaponSystem", "Libraries", "BaseWeapon"},
+        {"Weapons", "BaseWeapon"},
+        {"BaseWeapon"},
+    }
+    for _, path in ipairs(candidates) do
+        local node = ReplicatedStorage
+        for i = 1, #path do
+            node = node and node:FindFirstChild(path[i])
+            if not node then break end
+        end
+        if node and node:IsA("ModuleScript") then
+            local ok, mod = pcall(require, node)
+            if ok and type(mod) == "table" then
+                return mod
+            end
+        end
+    end
+    return nil
+end
+
+local function installSilentAim()
+    if silentAimInstalled then return end
+    silentAimInstalled = true
+
+    weaponModule = findWeaponModule()
+    if not weaponModule then
+        warn("[Nexus] Оружейный модуль не найден, Silent Aim будет недоступен")
+        return
+    end
+
+    -- Хукаем методы стрельбы
+    local fireMethods = {"fire", "Fire", "shoot", "Shoot", "FireWeapon", "fireWeapon", "PullTrigger", "Activate"}
+    for _, methodName in ipairs(fireMethods) do
+        if type(weaponModule[methodName]) == "function" then
+            fireOriginals[methodName] = weaponModule[methodName]
+            weaponModule[methodName] = function(self, ...)
+                local args = table.pack(...)
+                -- Если Silent Aim включён, меняем направление/позицию
+                if Nexus.Settings.SilentAim then
+                    local targetPart = getClosestPlayer()
+                    if targetPart then
+                        -- Определяем origin
+                        local origin
+                        if self and typeof(self.Muzzle) == "Instance" then
+                            origin = self.Muzzle.Position
+                        elseif typeof(args[1]) == "Vector3" then
+                            origin = args[1]
+                        else
+                            origin = Camera.CFrame.Position
+                        end
+
+                        -- Применяем в зависимости от формата аргументов
+                        if typeof(args[1]) == "Vector3" and typeof(args[2]) == "Vector3" then
+                            args[2] = (targetPart.Position - origin).Unit
+                        elseif typeof(args[1]) == "Vector3" then
+                            if (args[1] - origin).Magnitude > 10 then
+                                args[1] = targetPart.Position
+                            else
+                                args[1] = (targetPart.Position - origin).Unit
+                            end
+                        elseif type(args[1]) == "table" then
+                            local bulletData = args[1]
+                            if typeof(bulletData.origin) == "Vector3" and typeof(bulletData.direction) == "Vector3" then
+                                bulletData.direction = (targetPart.Position - bulletData.origin).Unit
+                            elseif typeof(bulletData.target) == "Vector3" then
+                                bulletData.target = targetPart.Position
+                            elseif typeof(bulletData.position) == "Vector3" then
+                                bulletData.position = targetPart.Position
+                            end
+                        end
+                    end
+                end
+                return fireOriginals[methodName](self, table.unpack(args, 1, args.n))
+            end
+            print("[Nexus] Silent Aim установлен на метод: " .. methodName)
+        end
+    end
+
+    -- Хукаем конфиги для отдачи/разброса (no recoil)
+    local configMethods = {"getConfigValue", "GetConfigValue", "getConfig", "GetConfig", "getStat", "GetStat"}
+    local zeroConfigs = {
+        RecoilMin = 0, RecoilMax = 0, MinSpread = 0, MaxSpread = 0,
+        ConeAngle = 0, Spread = 0, Recoil = 0, Inaccuracy = 0,
+        BulletSpread = 0, SpreadMin = 0, SpreadMax = 0,
+        RecoilX = 0, RecoilY = 0, RecoilZ = 0,
+        RecoilHorizontal = 0, RecoilVertical = 0,
+        Accuracy = 1,
+    }
+    for _, methodName in ipairs(configMethods) do
+        if type(weaponModule[methodName]) == "function" then
+            configOriginals[methodName] = weaponModule[methodName]
+            weaponModule[methodName] = function(self, ...)
+                local configName = select(1, ...)
+                if zeroConfigs[configName] ~= nil then
+                    return zeroConfigs[configName]
+                end
+                return configOriginals[methodName](self, ...)
+            end
+            print("[Nexus] No Recoil установлен на метод: " .. methodName)
+        end
+    end
+end
+
+-- Установим хук сразу, чтобы он был готов, когда SilentAim включится
+task.spawn(installSilentAim)
+
+-- ================== PLAYER LOGIC ==================
+
+-- Постоянное применение WalkSpeed и JumpPower
 RunService.Stepped:Connect(function()
     if LocalPlayer.Character and LocalPlayer.Character:FindFirstChildOfClass("Humanoid") then
         local hum = LocalPlayer.Character:FindFirstChildOfClass("Humanoid")
@@ -107,15 +229,13 @@ function Nexus.ResetCharacter()
     end
 end
 
--- ═══════════════════════════════════════════════════════════════
--- VISUALS LOGIC (ESP)
--- ═══════════════════════════════════════════════════════════════
+-- ================== VISUALS LOGIC (ESP) ==================
 
 local ESP_Storage = {}
 
 local function createESP(player)
     if player == LocalPlayer then return end
-    
+
     local box = Drawing.new("Square")
     box.Visible = false
     box.Color = Color3.fromRGB(0, 255, 136)
@@ -153,7 +273,9 @@ RunService.RenderStepped:Connect(function()
                     objs.Name.Position = Vector2.new(pos.X, pos.Y - 40)
                     objs.Name.Text = player.Name .. " [" .. math.floor(dist) .. "m]"
                     objs.Name.Visible = true
-                else objs.Name.Visible = false end
+                else
+                    objs.Name.Visible = false
+                end
 
                 -- Box ESP
                 if Nexus.Settings.BoxESP then
@@ -161,14 +283,18 @@ RunService.RenderStepped:Connect(function()
                     objs.Box.Size = Vector2.new(size / 1.5, size)
                     objs.Box.Position = Vector2.new(pos.X - objs.Box.Size.X / 2, pos.Y - objs.Box.Size.Y / 2)
                     objs.Box.Visible = true
-                else objs.Box.Visible = false end
+                else
+                    objs.Box.Visible = false
+                end
 
                 -- Tracers
                 if Nexus.Settings.Tracers then
                     objs.Tracer.From = Vector2.new(Camera.ViewportSize.X / 2, Camera.ViewportSize.Y)
                     objs.Tracer.To = Vector2.new(pos.X, pos.Y)
                     objs.Tracer.Visible = true
-                else objs.Tracer.Visible = false end
+                else
+                    objs.Tracer.Visible = false
+                end
             else
                 objs.Name.Visible = false
                 objs.Box.Visible = false
@@ -182,12 +308,9 @@ RunService.RenderStepped:Connect(function()
     end
 end)
 
--- ═══════════════════════════════════════════════════════════════
--- MISC LOGIC
--- ═══════════════════════════════════════════════════════════════
+-- ================== MISC LOGIC ==================
 
 -- Anti-AFK
-local VirtualUser = game:GetService("VirtualUser")
 LocalPlayer.Idled:Connect(function()
     if Nexus.Settings.AntiAFK then
         VirtualUser:Button2Down(Vector2.new(0,0), workspace.CurrentCamera.CFrame)
@@ -196,9 +319,13 @@ LocalPlayer.Idled:Connect(function()
     end
 end)
 
--- Rejoin
+-- Rejoin Server
 function Nexus.RejoinServer()
     TeleportService:Teleport(game.PlaceId, LocalPlayer)
 end
 
-return Nexus
+-- ================== ЭКСПОРТ ГЛОБАЛЬНОЙ ТАБЛИЦЫ ==================
+
+_G.Nexus = Nexus
+
+print("Nexus script loaded. Ready.")
