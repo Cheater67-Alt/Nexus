@@ -1,21 +1,24 @@
 --[[
-    NEXUS SCRIPT — полная логика
-    Включает: Aimbot, Silent Aim, No Recoil, Auto Shoot, FOV, Target Part,
+    NEXUS SCRIPT — полная логика (исправлено)
+    Включает: Aimbot, Silent Aim, No Recoil, Auto Shoot, FOV (градусы), Target Part,
               God Mode, Infinite Jump, WalkSpeed, JumpPower, Reset,
               Box ESP, Skeleton ESP, Name ESP, Tracers, Max Distance,
               Anti-AFK, Auto-Farm, Rejoin, Show Keybinds, Notifications, Save/Load Config.
     Все функции выключены по умолчанию.
     Экспортирует глобальную таблицу _G.Nexus.
-    Требуется DrawingLib для ESP и уведомлений.
+    Требуется DrawingLib для ESP и уведомлений (с фолбэком на встроенный Drawing).
 --]]
 
--- Загрузка DrawingLib (без неё ESP и уведомления работать не будут, но остальное останется)
-local DrawingLibSuccess, Drawing = pcall(function()
-    return loadstring(game:HttpGet("https://raw.githubusercontent.com/Stefanuk12/DrawingLib/main/Library.lua"))()
-end)
-if not DrawingLibSuccess then
-    warn("[Nexus] Не удалось загрузить DrawingLib. ESP и уведомления будут отключены.")
-    Drawing = nil
+-- Загрузка DrawingLib с фолбэком
+local Drawing = nil
+if not Drawing then
+    local success, result = pcall(function()
+        return loadstring(game:HttpGet("https://raw.githubusercontent.com/Stefanuk12/DrawingLib/main/Library.lua"))()
+    end)
+    if success then Drawing = result end
+end
+if not Drawing and rawget(getgenv(), "Drawing") then
+    Drawing = rawget(getgenv(), "Drawing")
 end
 
 local Nexus = {
@@ -24,7 +27,7 @@ local Nexus = {
         Aimbot = false,
         SilentAim = false,
         AutoShoot = false,
-        FOVSize = 200,
+        FOVSize = 90,           -- угол в градусах
         TargetPart = "Head",
 
         -- Player
@@ -59,6 +62,7 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local LocalPlayer = Players.LocalPlayer
 local Camera = workspace.CurrentCamera
 local VirtualUser = game:GetService("VirtualUser")
+local HttpService = game:GetService("HttpService")
 
 -- ================== УВЕДОМЛЕНИЯ ==================
 local Notifications = {}
@@ -89,20 +93,19 @@ setmetatable(Nexus.Settings, SettingsMeta)
 -- ================== COMBAT LOGIC ==================
 
 local function getClosestPlayer()
-    local closest, shortestDistance = nil, Nexus.Settings.FOVSize
-    local mousePos = UserInputService:GetMouseLocation()
+    local closest, shortestAngle = nil, math.rad(Nexus.Settings.FOVSize)
+    local cameraDir = Camera.CFrame.LookVector
+    local cameraPos = Camera.CFrame.Position
 
     for _, player in ipairs(Players:GetPlayers()) do
         if player ~= LocalPlayer and player.Character and player.Character:FindFirstChild("Humanoid") and player.Character.Humanoid.Health > 0 then
             local part = player.Character:FindFirstChild(Nexus.Settings.TargetPart) or player.Character:FindFirstChild("HumanoidRootPart")
             if part then
-                local screenPos, onScreen = Camera:WorldToViewportPoint(part.Position)
-                if onScreen then
-                    local dist = (Vector2.new(screenPos.X, screenPos.Y) - mousePos).Magnitude
-                    if dist < shortestDistance then
-                        closest = part
-                        shortestDistance = dist
-                    end
+                local dirToTarget = (part.Position - cameraPos).Unit
+                local angle = math.acos(math.clamp(cameraDir:Dot(dirToTarget), -1, 1))
+                if angle <= shortestAngle then
+                    shortestAngle = angle
+                    closest = part
                 end
             end
         end
@@ -110,25 +113,33 @@ local function getClosestPlayer()
     return closest
 end
 
--- Aimbot и AutoShoot
+-- Aimbot (плавный) и AutoShoot
+local aimSmoothing = 0.3  -- коэффициент сглаживания (0..1)
 RunService.RenderStepped:Connect(function()
-    if Nexus.Settings.Aimbot or Nexus.Settings.AutoShoot then
+    if Nexus.Settings.Aimbot and not Nexus.Settings.SilentAim then
         local target = getClosestPlayer()
         if target then
-            if Nexus.Settings.Aimbot then
-                Camera.CFrame = CFrame.new(Camera.CFrame.Position, target.Position)
-            end
-            if Nexus.Settings.AutoShoot then
-                local tool = LocalPlayer.Character and LocalPlayer.Character:FindFirstChildOfClass("Tool")
-                if tool then
-                    tool:Activate()
-                end
-            end
+            local camPos = Camera.CFrame.Position
+            local targetPos = target.Position
+            local desiredDir = (targetPos - camPos).Unit
+            local currentDir = Camera.CFrame.LookVector
+            local newDir = currentDir:Lerp(desiredDir, aimSmoothing).Unit
+            Camera.CFrame = CFrame.new(camPos, camPos + newDir)
+        end
+    end
+
+    if Nexus.Settings.AutoShoot then
+        local target = getClosestPlayer()
+        if target then
+            -- Используем VirtualUser для клика
+            VirtualUser:Button1Down(Vector2.new(0,0), Camera.CFrame)
+            task.wait(0.05)
+            VirtualUser:Button1Up(Vector2.new(0,0), Camera.CFrame)
         end
     end
 end)
 
--- Silent Aim (хуки)
+-- Silent Aim (хук методов оружия)
 local silentAimInstalled = false
 local weaponModule = nil
 local fireOriginals = {}
@@ -242,18 +253,16 @@ task.spawn(installSilentAim)
 
 -- ================== PLAYER LOGIC ==================
 
--- God Mode: постоянно восстанавливаем здоровье
+-- God Mode, WalkSpeed, JumpPower
 RunService.Stepped:Connect(function()
     if LocalPlayer.Character and LocalPlayer.Character:FindFirstChildOfClass("Humanoid") then
         local hum = LocalPlayer.Character:FindFirstChildOfClass("Humanoid")
-        -- WalkSpeed и JumpPower применяются только после изменения
         if Nexus.Settings.WalkSpeedChanged then
             hum.WalkSpeed = Nexus.Settings.WalkSpeed
         end
         if Nexus.Settings.JumpPowerChanged then
             hum.JumpPower = Nexus.Settings.JumpPower
         end
-        -- God Mode
         if Nexus.Settings.GodMode then
             hum.Health = hum.MaxHealth
         end
@@ -277,7 +286,6 @@ end
 if Drawing then
     local ESP_Storage = {}
 
-    -- Создание объектов для игрока (Box, Name, Tracer, Skeleton)
     local function createESP(player)
         if player == LocalPlayer then return end
         local box = Drawing.new("Square")
@@ -336,7 +344,6 @@ if Drawing then
     for _, p in ipairs(Players:GetPlayers()) do createESP(p) end
     Players.PlayerAdded:Connect(createESP)
 
-    -- Отрисовка ESP
     RunService.RenderStepped:Connect(function()
         for player, objs in pairs(ESP_Storage) do
             local char = player.Character
@@ -444,7 +451,6 @@ if Drawing then
             if Nexus.Settings.GodMode then table.insert(active, "God Mode") end
             if Nexus.Settings.InfiniteJump then table.insert(active, "Infinite Jump") end
             if Nexus.Settings.AutoFarm then table.insert(active, "Auto Farm") end
-            -- ... можно добавить другие
             if #active > 0 then
                 keybindsText.Text = "Активные: " .. table.concat(active, ", ")
                 keybindsText.Visible = true
@@ -458,19 +464,16 @@ if Drawing then
 end
 
 -- ================== AUTO-FARM ==================
--- Простейшая реализация: автоматически активировать инструмент и/или кликать
 local lastFarmAction = 0
 RunService.Heartbeat:Connect(function()
     if Nexus.Settings.AutoFarm then
         local now = os.clock()
         if now - lastFarmAction > 0.5 then
             lastFarmAction = now
-            -- Пытаемся использовать инструмент
             local tool = LocalPlayer.Character and LocalPlayer.Character:FindFirstChildOfClass("Tool")
             if tool then
                 tool:Activate()
             end
-            -- Симулируем нажатие E (Interact)
             VirtualUser:Button1Down(Vector2.new(0,0), Camera.CFrame)
             task.wait(0.1)
             VirtualUser:Button1Up(Vector2.new(0,0), Camera.CFrame)
@@ -494,10 +497,10 @@ function Nexus.RejoinServer()
     TeleportService:Teleport(game.PlaceId, LocalPlayer)
 end
 
--- Save / Load Config (используем writefile/readfile, если доступны)
+-- Save / Load Config
 function Nexus.SaveConfig()
     local success, err = pcall(function()
-        writefile("NexusConfig.json", game:GetService("HttpService"):JSONEncode(Nexus.Settings))
+        writefile("NexusConfig.json", HttpService:JSONEncode(Nexus.Settings))
     end)
     if success then
         print("[Nexus] Конфигурация сохранена.")
@@ -514,7 +517,7 @@ function Nexus.LoadConfig()
     end)
     if success and content then
         local ok, data = pcall(function()
-            return game:GetService("HttpService"):JSONDecode(content)
+            return HttpService:JSONDecode(content)
         end)
         if ok and type(data) == "table" then
             for k, v in pairs(data) do
