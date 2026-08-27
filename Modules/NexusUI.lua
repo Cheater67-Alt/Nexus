@@ -1,22 +1,13 @@
 --[[
-    ╔══════════════════════════════════════════════════════════════╗
-    ║                    NEXUS UI v1.4 — FIXED                    ║
-    ║              Modern Gaming Interface for Roblox              ║
-    ╚══════════════════════════════════════════════════════════════╝
-    v1.4: Фикс ZIndex у дропдауна (выпадающий список больше не проваливается
-          сквозь нижние элементы — поднимаем ZIndex родителя при открытии)
+    NEXUS UI — полный интерфейс
+    Управляет глобальной таблицей _G.Nexus
 --]]
 
 local Players = game:GetService("Players")
 local TweenService = game:GetService("TweenService")
 local UserInputService = game:GetService("UserInputService")
-
 local LocalPlayer = Players.LocalPlayer
 local PlayerGui = LocalPlayer:WaitForChild("PlayerGui")
-
--- ═══════════════════════════════════════════════════════════════
--- CONFIGURATION
--- ═══════════════════════════════════════════════════════════════
 
 local CONFIG = {
     Colors = {
@@ -50,10 +41,6 @@ local CONFIG = {
     }
 }
 
--- ═══════════════════════════════════════════════════════════════
--- UTILITIES
--- ═══════════════════════════════════════════════════════════════
-
 local function Create(className, props)
     local inst = Instance.new(className)
     for k, v in pairs(props or {}) do
@@ -86,10 +73,6 @@ local function IsMove(input)
     return input.UserInputType == Enum.UserInputType.MouseMovement
         or input.UserInputType == Enum.UserInputType.Touch
 end
-
--- ═══════════════════════════════════════════════════════════════
--- NEXUS UI CLASS
--- ═══════════════════════════════════════════════════════════════
 
 local NexusUI = {}
 NexusUI.__index = NexusUI
@@ -162,10 +145,6 @@ function NexusUI:Init()
     self:SetupToggleKey()
 end
 
--- ═══════════════════════════════════════════════════════════════
--- HEADER
--- ═══════════════════════════════════════════════════════════════
-
 function NexusUI:BuildHeader()
     self.Header = Create("Frame", {
         Name = "Header",
@@ -229,10 +208,6 @@ function NexusUI:BuildHeader()
     closeBtn.MouseButton1Click:Connect(function() self:Close() end)
 end
 
--- ═══════════════════════════════════════════════════════════════
--- SIDEBAR & CONTENT
--- ═══════════════════════════════════════════════════════════════
-
 function NexusUI:BuildSidebar()
     self.Sidebar = Create("Frame", {
         Name = "Sidebar", Parent = self.MainFrame,
@@ -274,10 +249,6 @@ function NexusUI:BuildContentArea()
         PaddingTop = UDim.new(0, 5), PaddingBottom = UDim.new(0, 5),
     })
 end
-
--- ═══════════════════════════════════════════════════════════════
--- TABS
--- ═══════════════════════════════════════════════════════════════
 
 function NexusUI:CreateTab(name, icon)
     local btn = Create("TextButton", {
@@ -377,9 +348,7 @@ function NexusUI:CloseAllDropdowns()
     end
 end
 
--- ═══════════════════════════════════════════════════════════════
--- ELEMENTS
--- ═══════════════════════════════════════════════════════════════
+-- Элементы интерфейса
 
 function NexusUI:CreateSection(tab, title)
     local f = Create("Frame", {
@@ -590,10 +559,6 @@ function NexusUI:CreateSlider(tab, text, min, max, default, callback)
     return f
 end
 
--- ═══════════════════════════════════════════════════════════════
--- DROPDOWN (FIXED v1.4 — выпадающий список поверх соседей)
--- ═══════════════════════════════════════════════════════════════
-
 function NexusUI:CreateDropdown(tab, text, options, defaultIdx, callback)
     callback = callback or function() end
     options = options or {}
@@ -603,7 +568,7 @@ function NexusUI:CreateDropdown(tab, text, options, defaultIdx, callback)
         Parent = tab.Content, BackgroundColor3 = CONFIG.Colors.Surface,
         BorderSizePixel = 0, Size = UDim2.new(1, 0, 0, CONFIG.Sizes.ElementHeight),
         LayoutOrder = #tab.Elements, ClipsDescendants = false,
-        ZIndex = 1,   -- базовый ZIndex (как у всех элементов)
+        ZIndex = 1,
     })
     Create("UICorner", {CornerRadius = UDim.new(0, 6), Parent = f})
 
@@ -652,7 +617,6 @@ function NexusUI:CreateDropdown(tab, text, options, defaultIdx, callback)
         if forceClose and not open then return end
         open = (not forceClose) and (not open)
 
-        -- Фикс v1.4: поднимаем ZIndex родителя, чтобы список был поверх соседей
         f.ZIndex = open and 50 or 1
 
         if activeSizeTween then
@@ -747,9 +711,7 @@ function NexusUI:CreateLabel(tab, text)
     return lbl
 end
 
--- ═══════════════════════════════════════════════════════════════
--- WINDOW CONTROLS
--- ═══════════════════════════════════════════════════════════════
+-- Управление окном
 
 function NexusUI:Open()
     if self.IsOpen or self.IsAnimating then return end
@@ -791,10 +753,6 @@ function NexusUI:ToggleMinimize()
     end
 end
 
--- ═══════════════════════════════════════════════════════════════
--- DRAG & DROP
--- ═══════════════════════════════════════════════════════════════
-
 function NexusUI:EnableDrag()
     local dragging = false
     local dragStart, startPos
@@ -832,134 +790,67 @@ function NexusUI:SetupToggleKey()
     end)
 end
 
--- ═══════════════════════════════════════════════════════════════
--- BUILD TABS (С ПРИВЯЗКОЙ К Scripts)
--- ═══════════════════════════════════════════════════════════════
+-- ПОСТРОЕНИЕ ВКЛАДОК (связь с _G.Nexus)
 
 function NexusUI:BuildTabs()
-    -- Убедитесь, что глобальная таблица Scripts существует
-    -- Пример: _G.Scripts = { Settings = {...}, ResetCharacter = function() ... end, RejoinServer = function() ... end }
-    local Scripts = _G.Scripts or {}
+    local Nexus = _G.Nexus
+    if not Nexus then
+        Nexus = {
+            Settings = {
+                Aimbot = false, SilentAim = false, AutoShoot = false, FOVSize = 200, TargetPart = "Head",
+                GodMode = false, InfiniteJump = false, WalkSpeed = 70, JumpPower = 70,
+                BoxESP = false, SkeletonESP = false, NameESP = false, Tracers = false, MaxDistance = 1000,
+                AntiAFK = false, AutoFarm = false,
+            },
+            ResetCharacter = function() end,
+            RejoinServer = function() end,
+        }
+        _G.Nexus = Nexus
+    end
 
     local combat = self:CreateTab("Combat", "⚔")
     self:CreateSection(combat, "Combat Features")
-
-    self:CreateToggle(combat, "Aimbot", Scripts.Settings and Scripts.Settings.Aimbot or false, function(v)
-        if Scripts.Settings then Scripts.Settings.Aimbot = v end
-    end)
-
-    self:CreateToggle(combat, "Silent Aim", Scripts.Settings and Scripts.Settings.SilentAim or false, function(v)
-        if Scripts.Settings then Scripts.Settings.SilentAim = v end
-    end)
-
-    self:CreateToggle(combat, "Auto Shoot", Scripts.Settings and Scripts.Settings.AutoShoot or false, function(v)
-        if Scripts.Settings then Scripts.Settings.AutoShoot = v end
-    end)
-
-    self:CreateSlider(combat, "FOV Size", 30, 300, Scripts.Settings and Scripts.Settings.FOV or 100, function(v)
-        if Scripts.Settings then Scripts.Settings.FOV = v end
-    end)
-
-    self:CreateDropdown(combat, "Target Part", {"Head", "Torso", "HumanoidRootPart"}, 1, function(opt, idx)
-        if Scripts.Settings then Scripts.Settings.TargetPart = opt end
-    end)
+    self:CreateToggle(combat, "Aimbot", Nexus.Settings.Aimbot, function(v) Nexus.Settings.Aimbot = v end)
+    self:CreateToggle(combat, "Silent Aim", Nexus.Settings.SilentAim, function(v) Nexus.Settings.SilentAim = v end)
+    self:CreateToggle(combat, "Auto Shoot", Nexus.Settings.AutoShoot, function(v) Nexus.Settings.AutoShoot = v end)
+    self:CreateSlider(combat, "FOV Size", 30, 300, Nexus.Settings.FOVSize, function(v) Nexus.Settings.FOVSize = v end)
+    self:CreateDropdown(combat, "Target Part", {"Head", "Torso", "HumanoidRootPart"}, 1, function(opt) Nexus.Settings.TargetPart = opt end)
 
     local player = self:CreateTab("Player", "👤")
     self:CreateSection(player, "Character")
-
-    self:CreateToggle(player, "God Mode", Scripts.Settings and Scripts.Settings.GodMode or false, function(v)
-        if Scripts.Settings then Scripts.Settings.GodMode = v end
-    end)
-
-    self:CreateToggle(player, "Infinite Jump", Scripts.Settings and Scripts.Settings.InfiniteJump or false, function(v)
-        if Scripts.Settings then Scripts.Settings.InfiniteJump = v end
-    end)
-
-    self:CreateSlider(player, "WalkSpeed", 16, 200, Scripts.Settings and Scripts.Settings.WalkSpeed or 16, function(v)
-        if Scripts.Settings then Scripts.Settings.WalkSpeed = v end
-    end)
-
-    self:CreateSlider(player, "JumpPower", 50, 300, Scripts.Settings and Scripts.Settings.JumpPower or 50, function(v)
-        if Scripts.Settings then Scripts.Settings.JumpPower = v end
-    end)
-
-    self:CreateButton(player, "Reset Character", function()
-        if Scripts.ResetCharacter then Scripts.ResetCharacter() end
-    end)
+    self:CreateToggle(player, "God Mode", Nexus.Settings.GodMode, function(v) Nexus.Settings.GodMode = v end)
+    self:CreateToggle(player, "Infinite Jump", Nexus.Settings.InfiniteJump, function(v) Nexus.Settings.InfiniteJump = v end)
+    self:CreateSlider(player, "WalkSpeed", 16, 200, Nexus.Settings.WalkSpeed, function(v) Nexus.Settings.WalkSpeed = v end)
+    self:CreateSlider(player, "JumpPower", 50, 300, Nexus.Settings.JumpPower, function(v) Nexus.Settings.JumpPower = v end)
+    self:CreateButton(player, "Reset Character", function() Nexus.ResetCharacter() end)
 
     local visuals = self:CreateTab("Visuals", "👁")
     self:CreateSection(visuals, "ESP")
-
-    self:CreateToggle(visuals, "Box ESP", Scripts.Settings and Scripts.Settings.BoxESP or false, function(v)
-        if Scripts.Settings then Scripts.Settings.BoxESP = v end
-    end)
-
-    self:CreateToggle(visuals, "Skeleton ESP", Scripts.Settings and Scripts.Settings.SkeletonESP or false, function(v)
-        if Scripts.Settings then Scripts.Settings.SkeletonESP = v end
-    end)
-
-    self:CreateToggle(visuals, "Name ESP", Scripts.Settings and Scripts.Settings.NameESP or false, function(v)
-        if Scripts.Settings then Scripts.Settings.NameESP = v end
-    end)
-
-    self:CreateToggle(visuals, "Tracers", Scripts.Settings and Scripts.Settings.Tracers or false, function(v)
-        if Scripts.Settings then Scripts.Settings.Tracers = v end
-    end)
-
-    self:CreateSlider(visuals, "Max Distance", 100, 5000, Scripts.Settings and Scripts.Settings.MaxDistance or 1000, function(v)
-        if Scripts.Settings then Scripts.Settings.MaxDistance = v end
-    end)
+    self:CreateToggle(visuals, "Box ESP", Nexus.Settings.BoxESP, function(v) Nexus.Settings.BoxESP = v end)
+    self:CreateToggle(visuals, "Skeleton ESP", Nexus.Settings.SkeletonESP, function(v) Nexus.Settings.SkeletonESP = v end)
+    self:CreateToggle(visuals, "Name ESP", Nexus.Settings.NameESP, function(v) Nexus.Settings.NameESP = v end)
+    self:CreateToggle(visuals, "Tracers", Nexus.Settings.Tracers, function(v) Nexus.Settings.Tracers = v end)
+    self:CreateSlider(visuals, "Max Distance", 100, 5000, Nexus.Settings.MaxDistance, function(v) Nexus.Settings.MaxDistance = v end)
 
     local misc = self:CreateTab("Misc", "⚙")
     self:CreateSection(misc, "Utilities")
-
-    self:CreateToggle(misc, "Anti-AFK", Scripts.Settings and Scripts.Settings.AntiAFK or false, function(v)
-        if Scripts.Settings then Scripts.Settings.AntiAFK = v end
-    end)
-
-    self:CreateToggle(misc, "Auto-Farm", Scripts.Settings and Scripts.Settings.AutoFarm or false, function(v)
-        if Scripts.Settings then Scripts.Settings.AutoFarm = v end
-    end)
-
-    self:CreateDropdown(misc, "Theme", {"Dark", "Darker", "AMOLED"}, 1, function(opt, idx)
-        if Scripts.Settings then Scripts.Settings.Theme = opt end
-    end)
-
-    self:CreateButton(misc, "Rejoin Server", function()
-        if Scripts.RejoinServer then Scripts.RejoinServer() end
-    end)
+    self:CreateToggle(misc, "Anti-AFK", Nexus.Settings.AntiAFK, function(v) Nexus.Settings.AntiAFK = v end)
+    self:CreateToggle(misc, "Auto-Farm", Nexus.Settings.AutoFarm, function(v) Nexus.Settings.AutoFarm = v end)
+    self:CreateButton(misc, "Rejoin Server", function() Nexus.RejoinServer() end)
 
     local settings = self:CreateTab("Settings", "🔧")
     self:CreateSection(settings, "Configuration")
-
-    self:CreateToggle(settings, "Show Keybinds", Scripts.Settings and Scripts.Settings.ShowKeybinds or true, function(v)
-        if Scripts.Settings then Scripts.Settings.ShowKeybinds = v end
-    end)
-
-    self:CreateToggle(settings, "Notifications", Scripts.Settings and Scripts.Settings.Notifications or true, function(v)
-        if Scripts.Settings then Scripts.Settings.Notifications = v end
-    end)
-
-    self:CreateSlider(settings, "UI Scale", 50, 150, Scripts.Settings and Scripts.Settings.UIScale or 100, function(v)
-        if Scripts.Settings then Scripts.Settings.UIScale = v end
-    end)
-
-    self:CreateButton(settings, "Save Config", function()
-        if Scripts.SaveConfig then Scripts.SaveConfig() end
-    end)
-
-    self:CreateButton(settings, "Load Config", function()
-        if Scripts.LoadConfig then Scripts.LoadConfig() end
-    end)
-
+    self:CreateToggle(settings, "Show Keybinds", true, function(v) end)
+    self:CreateToggle(settings, "Notifications", true, function(v) end)
+    self:CreateSlider(settings, "UI Scale", 50, 150, 100, function(v) if self.UIScale then self.UIScale.Scale = v/100 end end)
+    self:CreateButton(settings, "Save Config", function() end)
+    self:CreateButton(settings, "Load Config", function() end)
     self:CreateLabel(settings, "RightShift or Insert to toggle UI")
 
     self:SelectTab(combat)
 end
 
--- ═══════════════════════════════════════════════════════════════
--- START
--- ═══════════════════════════════════════════════════════════════
+-- Создание UI
 
 local UI = NexusUI.new()
 task.delay(0.5, function()
