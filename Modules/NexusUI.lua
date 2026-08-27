@@ -1,6 +1,7 @@
 --[[
     NEXUS UI — полный интерфейс
     Управляет глобальной таблицей _G.Nexus
+    При изменении WalkSpeed и JumpPower устанавливаются флаги WalkSpeedChanged, JumpPowerChanged
 --]]
 
 local Players = game:GetService("Players")
@@ -347,8 +348,6 @@ function NexusUI:CloseAllDropdowns()
         closeFn(true)
     end
 end
-
--- Элементы интерфейса
 
 function NexusUI:CreateSection(tab, title)
     local f = Create("Frame", {
@@ -711,8 +710,6 @@ function NexusUI:CreateLabel(tab, text)
     return lbl
 end
 
--- Управление окном
-
 function NexusUI:Open()
     if self.IsOpen or self.IsAnimating then return end
     self.IsAnimating = true
@@ -790,17 +787,17 @@ function NexusUI:SetupToggleKey()
     end)
 end
 
--- ПОСТРОЕНИЕ ВКЛАДОК (связь с _G.Nexus)
-
 function NexusUI:BuildTabs()
     local Nexus = _G.Nexus
     if not Nexus then
         Nexus = {
             Settings = {
                 Aimbot = false, SilentAim = false, AutoShoot = false, FOVSize = 200, TargetPart = "Head",
-                GodMode = false, InfiniteJump = false, WalkSpeed = 70, JumpPower = 70,
+                GodMode = false, InfiniteJump = false, WalkSpeed = 16, JumpPower = 50,
                 BoxESP = false, SkeletonESP = false, NameESP = false, Tracers = false, MaxDistance = 1000,
                 AntiAFK = false, AutoFarm = false,
+                WalkSpeedChanged = false,
+                JumpPowerChanged = false,
             },
             ResetCharacter = function() end,
             RejoinServer = function() end,
@@ -820,8 +817,14 @@ function NexusUI:BuildTabs()
     self:CreateSection(player, "Character")
     self:CreateToggle(player, "God Mode", Nexus.Settings.GodMode, function(v) Nexus.Settings.GodMode = v end)
     self:CreateToggle(player, "Infinite Jump", Nexus.Settings.InfiniteJump, function(v) Nexus.Settings.InfiniteJump = v end)
-    self:CreateSlider(player, "WalkSpeed", 16, 200, Nexus.Settings.WalkSpeed, function(v) Nexus.Settings.WalkSpeed = v end)
-    self:CreateSlider(player, "JumpPower", 50, 300, Nexus.Settings.JumpPower, function(v) Nexus.Settings.JumpPower = v end)
+    self:CreateSlider(player, "WalkSpeed", 16, 200, Nexus.Settings.WalkSpeed, function(v)
+        Nexus.Settings.WalkSpeed = v
+        Nexus.Settings.WalkSpeedChanged = true
+    end)
+    self:CreateSlider(player, "JumpPower", 50, 300, Nexus.Settings.JumpPower, function(v)
+        Nexus.Settings.JumpPower = v
+        Nexus.Settings.JumpPowerChanged = true
+    end)
     self:CreateButton(player, "Reset Character", function() Nexus.ResetCharacter() end)
 
     local visuals = self:CreateTab("Visuals", "👁")
@@ -849,8 +852,6 @@ function NexusUI:BuildTabs()
 
     self:SelectTab(combat)
 end
-
--- Создание UI
 
 local UI = NexusUI.new()
 task.delay(0.5, function()
