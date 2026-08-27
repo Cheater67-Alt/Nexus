@@ -2,7 +2,17 @@
     NEXUS SCRIPT — вся логика (Aimbot, Silent Aim, No Recoil, WalkSpeed/JumpPower, ESP, Anti-AFK)
     Экспортирует глобальную таблицу _G.Nexus.
     Все функции выключены по умолчанию.
+    Требуется DrawingLib для ESP (загружается автоматически).
 --]]
+
+-- Загружаем DrawingLib (если не удалось, ESP не будет работать, но остальное останется)
+local DrawingLibSuccess, Drawing = pcall(function()
+    return loadstring(game:HttpGet("https://raw.githubusercontent.com/Stefanuk12/DrawingLib/main/Library.lua"))()
+end)
+if not DrawingLibSuccess then
+    warn("[Nexus] Не удалось загрузить DrawingLib. ESP будет отключён.")
+    Drawing = nil
+end
 
 local Nexus = {
     Settings = {
@@ -18,8 +28,8 @@ local Nexus = {
         InfiniteJump = false,
         WalkSpeed = 16,
         JumpPower = 50,
-        WalkSpeedChanged = false,  -- применяем скорость только после изменения в UI
-        JumpPowerChanged = false,  -- применяем прыжок только после изменения в UI
+        WalkSpeedChanged = false,
+        JumpPowerChanged = false,
 
         -- Visuals
         BoxESP = false,
@@ -134,7 +144,6 @@ local function installSilentAim()
             fireOriginals[methodName] = weaponModule[methodName]
             weaponModule[methodName] = function(self, ...)
                 local args = table.pack(...)
-                -- Применяем Silent Aim только если он включён
                 if Nexus.Settings.SilentAim then
                     local targetPart = getClosestPlayer()
                     if targetPart then
@@ -187,7 +196,6 @@ local function installSilentAim()
             configOriginals[methodName] = weaponModule[methodName]
             weaponModule[methodName] = function(self, ...)
                 local configName = select(1, ...)
-                -- No Recoil применяется только при включённом Silent Aim
                 if Nexus.Settings.SilentAim and zeroConfigs[configName] ~= nil then
                     return zeroConfigs[configName]
                 end
@@ -227,58 +235,64 @@ function Nexus.ResetCharacter()
 end
 
 -- ================== VISUALS (ESP) ==================
+-- Блок ESP будет работать только если DrawingLib успешно загружена
+if Drawing then
+    local ESP_Storage = {}
+    local function createESP(player)
+        if player == LocalPlayer then return end
+        local box = Drawing.new("Square")
+        box.Visible = false
+        box.Color = Color3.fromRGB(0, 255, 136)
+        box.Thickness = 1
+        box.Filled = false
+        local name = Drawing.new("Text")
+        name.Visible = false
+        name.Color = Color3.fromRGB(255, 255, 255)
+        name.Size = 14
+        name.Center = true
+        name.Outline = true
+        local tracer = Drawing.new("Line")
+        tracer.Visible = false
+        tracer.Color = Color3.fromRGB(0, 255, 136)
+        tracer.Thickness = 1
+        ESP_Storage[player] = {Box = box, Name = name, Tracer = tracer}
+    end
 
-local ESP_Storage = {}
-local function createESP(player)
-    if player == LocalPlayer then return end
-    local box = Drawing.new("Square")
-    box.Visible = false
-    box.Color = Color3.fromRGB(0, 255, 136)
-    box.Thickness = 1
-    box.Filled = false
-    local name = Drawing.new("Text")
-    name.Visible = false
-    name.Color = Color3.fromRGB(255, 255, 255)
-    name.Size = 14
-    name.Center = true
-    name.Outline = true
-    local tracer = Drawing.new("Line")
-    tracer.Visible = false
-    tracer.Color = Color3.fromRGB(0, 255, 136)
-    tracer.Thickness = 1
-    ESP_Storage[player] = {Box = box, Name = name, Tracer = tracer}
-end
+    for _, p in ipairs(Players:GetPlayers()) do createESP(p) end
+    Players.PlayerAdded:Connect(createESP)
 
-for _, p in ipairs(Players:GetPlayers()) do createESP(p) end
-Players.PlayerAdded:Connect(createESP)
-
-RunService.RenderStepped:Connect(function()
-    for player, objs in pairs(ESP_Storage) do
-        if player.Character and player.Character:FindFirstChild("HumanoidRootPart") and player.Character:FindFirstChildOfClass("Humanoid").Health > 0 then
-            local hrp = player.Character.HumanoidRootPart
-            local pos, onScreen = Camera:WorldToViewportPoint(hrp.Position)
-            local dist = (Camera.CFrame.Position - hrp.Position).Magnitude
-            if onScreen and dist <= Nexus.Settings.MaxDistance then
-                if Nexus.Settings.NameESP then
-                    objs.Name.Position = Vector2.new(pos.X, pos.Y - 40)
-                    objs.Name.Text = player.Name .. " [" .. math.floor(dist) .. "m]"
-                    objs.Name.Visible = true
+    RunService.RenderStepped:Connect(function()
+        for player, objs in pairs(ESP_Storage) do
+            if player.Character and player.Character:FindFirstChild("HumanoidRootPart") and player.Character:FindFirstChildOfClass("Humanoid").Health > 0 then
+                local hrp = player.Character.HumanoidRootPart
+                local pos, onScreen = Camera:WorldToViewportPoint(hrp.Position)
+                local dist = (Camera.CFrame.Position - hrp.Position).Magnitude
+                if onScreen and dist <= Nexus.Settings.MaxDistance then
+                    if Nexus.Settings.NameESP then
+                        objs.Name.Position = Vector2.new(pos.X, pos.Y - 40)
+                        objs.Name.Text = player.Name .. " [" .. math.floor(dist) .. "m]"
+                        objs.Name.Visible = true
+                    else
+                        objs.Name.Visible = false
+                    end
+                    if Nexus.Settings.BoxESP then
+                        local size = (Camera:WorldToViewportPoint(hrp.Position + Vector3.new(0, 3, 0)).Y - Camera:WorldToViewportPoint(hrp.Position - Vector3.new(0, 4, 0)).Y)
+                        objs.Box.Size = Vector2.new(size / 1.5, size)
+                        objs.Box.Position = Vector2.new(pos.X - objs.Box.Size.X / 2, pos.Y - objs.Box.Size.Y / 2)
+                        objs.Box.Visible = true
+                    else
+                        objs.Box.Visible = false
+                    end
+                    if Nexus.Settings.Tracers then
+                        objs.Tracer.From = Vector2.new(Camera.ViewportSize.X / 2, Camera.ViewportSize.Y)
+                        objs.Tracer.To = Vector2.new(pos.X, pos.Y)
+                        objs.Tracer.Visible = true
+                    else
+                        objs.Tracer.Visible = false
+                    end
                 else
                     objs.Name.Visible = false
-                end
-                if Nexus.Settings.BoxESP then
-                    local size = (Camera:WorldToViewportPoint(hrp.Position + Vector3.new(0, 3, 0)).Y - Camera:WorldToViewportPoint(hrp.Position - Vector3.new(0, 4, 0)).Y)
-                    objs.Box.Size = Vector2.new(size / 1.5, size)
-                    objs.Box.Position = Vector2.new(pos.X - objs.Box.Size.X / 2, pos.Y - objs.Box.Size.Y / 2)
-                    objs.Box.Visible = true
-                else
                     objs.Box.Visible = false
-                end
-                if Nexus.Settings.Tracers then
-                    objs.Tracer.From = Vector2.new(Camera.ViewportSize.X / 2, Camera.ViewportSize.Y)
-                    objs.Tracer.To = Vector2.new(pos.X, pos.Y)
-                    objs.Tracer.Visible = true
-                else
                     objs.Tracer.Visible = false
                 end
             else
@@ -286,13 +300,9 @@ RunService.RenderStepped:Connect(function()
                 objs.Box.Visible = false
                 objs.Tracer.Visible = false
             end
-        else
-            objs.Name.Visible = false
-            objs.Box.Visible = false
-            objs.Tracer.Visible = false
         end
-    end
-end)
+    end)
+end
 
 -- ================== MISC ==================
 
