@@ -1,7 +1,8 @@
 --[[
     NEXUS UI — полный интерфейс
     Управляет глобальной таблицей _G.Nexus
-    При изменении WalkSpeed и JumpPower устанавливаются флаги WalkSpeedChanged, JumpPowerChanged
+    Исправлено: слайдеры не вызывают callback при инициализации (для WalkSpeed/JumpPower)
+    Добавлены все элементы управления.
 --]]
 
 local Players = game:GetService("Players")
@@ -554,7 +555,7 @@ function NexusUI:CreateSlider(tab, text, min, max, default, callback)
     end)
 
     table.insert(tab.Elements, f)
-    callback(default)
+    -- УБРАНО: callback(default) — чтобы слайдер не вызывал callback при создании
     return f
 end
 
@@ -792,15 +793,16 @@ function NexusUI:BuildTabs()
     if not Nexus then
         Nexus = {
             Settings = {
-                Aimbot = false, SilentAim = false, AutoShoot = false, FOVSize = 200, TargetPart = "Head",
+                Aimbot = false, SilentAim = false, AutoShoot = false, FOVSize = 90, TargetPart = "Head",
                 GodMode = false, InfiniteJump = false, WalkSpeed = 16, JumpPower = 50,
                 BoxESP = false, SkeletonESP = false, NameESP = false, Tracers = false, MaxDistance = 1000,
-                AntiAFK = false, AutoFarm = false,
-                WalkSpeedChanged = false,
-                JumpPowerChanged = false,
+                AntiAFK = false, AutoFarm = false, ShowKeybinds = true, Notifications = true,
+                WalkSpeedChanged = false, JumpPowerChanged = false,
             },
             ResetCharacter = function() end,
             RejoinServer = function() end,
+            SaveConfig = function() end,
+            LoadConfig = function() end,
         }
         _G.Nexus = Nexus
     end
@@ -810,7 +812,7 @@ function NexusUI:BuildTabs()
     self:CreateToggle(combat, "Aimbot", Nexus.Settings.Aimbot, function(v) Nexus.Settings.Aimbot = v end)
     self:CreateToggle(combat, "Silent Aim", Nexus.Settings.SilentAim, function(v) Nexus.Settings.SilentAim = v end)
     self:CreateToggle(combat, "Auto Shoot", Nexus.Settings.AutoShoot, function(v) Nexus.Settings.AutoShoot = v end)
-    self:CreateSlider(combat, "FOV Size", 30, 300, Nexus.Settings.FOVSize, function(v) Nexus.Settings.FOVSize = v end)
+    self:CreateSlider(combat, "FOV Size (deg)", 10, 180, Nexus.Settings.FOVSize, function(v) Nexus.Settings.FOVSize = v end)
     self:CreateDropdown(combat, "Target Part", {"Head", "Torso", "HumanoidRootPart"}, 1, function(opt) Nexus.Settings.TargetPart = opt end)
 
     local player = self:CreateTab("Player", "👤")
@@ -840,14 +842,14 @@ function NexusUI:BuildTabs()
     self:CreateToggle(misc, "Anti-AFK", Nexus.Settings.AntiAFK, function(v) Nexus.Settings.AntiAFK = v end)
     self:CreateToggle(misc, "Auto-Farm", Nexus.Settings.AutoFarm, function(v) Nexus.Settings.AutoFarm = v end)
     self:CreateButton(misc, "Rejoin Server", function() Nexus.RejoinServer() end)
+    self:CreateButton(misc, "Save Config", function() Nexus.SaveConfig() end)
+    self:CreateButton(misc, "Load Config", function() Nexus.LoadConfig() end)
 
     local settings = self:CreateTab("Settings", "🔧")
     self:CreateSection(settings, "Configuration")
-    self:CreateToggle(settings, "Show Keybinds", true, function(v) end)
-    self:CreateToggle(settings, "Notifications", true, function(v) end)
+    self:CreateToggle(settings, "Show Keybinds", Nexus.Settings.ShowKeybinds, function(v) Nexus.Settings.ShowKeybinds = v end)
+    self:CreateToggle(settings, "Notifications", Nexus.Settings.Notifications, function(v) Nexus.Settings.Notifications = v end)
     self:CreateSlider(settings, "UI Scale", 50, 150, 100, function(v) if self.UIScale then self.UIScale.Scale = v/100 end end)
-    self:CreateButton(settings, "Save Config", function() end)
-    self:CreateButton(settings, "Load Config", function() end)
     self:CreateLabel(settings, "RightShift or Insert to toggle UI")
 
     self:SelectTab(combat)
