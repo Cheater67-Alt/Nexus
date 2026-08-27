@@ -1,7 +1,7 @@
 --[[
-    NEXUS SCRIPT — вся логика (Aimbot, Silent Aim, ESP, Misc)
-    Должен быть размещён в LocalScript раньше UI-скрипта.
-    Использует глобальную таблицу _G.Nexus для связи с интерфейсом.
+    NEXUS SCRIPT — вся логика (Aimbot, Silent Aim, No Recoil, WalkSpeed/JumpPower, ESP, Anti-AFK)
+    Экспортирует глобальную таблицу _G.Nexus.
+    Все функции выключены по умолчанию.
 --]]
 
 local Nexus = {
@@ -14,21 +14,23 @@ local Nexus = {
         TargetPart = "Head",
 
         -- Player
-        GodMode = false,          -- (пока не реализовано)
+        GodMode = false,
         InfiniteJump = false,
         WalkSpeed = 16,
         JumpPower = 50,
+        WalkSpeedChanged = false,  -- применяем скорость только после изменения в UI
+        JumpPowerChanged = false,  -- применяем прыжок только после изменения в UI
 
         -- Visuals
         BoxESP = false,
-        SkeletonESP = false,      -- (пока не реализовано)
+        SkeletonESP = false,
         NameESP = false,
         Tracers = false,
         MaxDistance = 1000,
 
         -- Misc
         AntiAFK = false,
-        AutoFarm = false,         -- (пока не реализовано)
+        AutoFarm = false,
     }
 }
 
@@ -44,7 +46,6 @@ local VirtualUser = game:GetService("VirtualUser")
 
 -- ================== COMBAT LOGIC ==================
 
--- Поиск ближайшей цели (используется Aimbot и Silent Aim)
 local function getClosestPlayer()
     local closest, shortestDistance = nil, Nexus.Settings.FOVSize
     local mousePos = UserInputService:GetMouseLocation()
@@ -85,8 +86,7 @@ RunService.RenderStepped:Connect(function()
     end
 end)
 
--- Silent Aim (хук методов оружия + no recoil)
--- Мы устанавливаем хук один раз, а внутри проверяем настройку SilentAim
+-- Silent Aim (установка хуков)
 local silentAimInstalled = false
 local weaponModule = nil
 local fireOriginals = {}
@@ -128,18 +128,16 @@ local function installSilentAim()
         return
     end
 
-    -- Хукаем методы стрельбы
     local fireMethods = {"fire", "Fire", "shoot", "Shoot", "FireWeapon", "fireWeapon", "PullTrigger", "Activate"}
     for _, methodName in ipairs(fireMethods) do
         if type(weaponModule[methodName]) == "function" then
             fireOriginals[methodName] = weaponModule[methodName]
             weaponModule[methodName] = function(self, ...)
                 local args = table.pack(...)
-                -- Если Silent Aim включён, меняем направление/позицию
+                -- Применяем Silent Aim только если он включён
                 if Nexus.Settings.SilentAim then
                     local targetPart = getClosestPlayer()
                     if targetPart then
-                        -- Определяем origin
                         local origin
                         if self and typeof(self.Muzzle) == "Instance" then
                             origin = self.Muzzle.Position
@@ -149,7 +147,6 @@ local function installSilentAim()
                             origin = Camera.CFrame.Position
                         end
 
-                        -- Применяем в зависимости от формата аргументов
                         if typeof(args[1]) == "Vector3" and typeof(args[2]) == "Vector3" then
                             args[2] = (targetPart.Position - origin).Unit
                         elseif typeof(args[1]) == "Vector3" then
@@ -176,7 +173,6 @@ local function installSilentAim()
         end
     end
 
-    -- Хукаем конфиги для отдачи/разброса (no recoil)
     local configMethods = {"getConfigValue", "GetConfigValue", "getConfig", "GetConfig", "getStat", "GetStat"}
     local zeroConfigs = {
         RecoilMin = 0, RecoilMax = 0, MinSpread = 0, MaxSpread = 0,
@@ -191,7 +187,8 @@ local function installSilentAim()
             configOriginals[methodName] = weaponModule[methodName]
             weaponModule[methodName] = function(self, ...)
                 local configName = select(1, ...)
-                if zeroConfigs[configName] ~= nil then
+                -- No Recoil применяется только при включённом Silent Aim
+                if Nexus.Settings.SilentAim and zeroConfigs[configName] ~= nil then
                     return zeroConfigs[configName]
                 end
                 return configOriginals[methodName](self, ...)
@@ -201,59 +198,54 @@ local function installSilentAim()
     end
 end
 
--- Установим хук сразу, чтобы он был готов, когда SilentAim включится
 task.spawn(installSilentAim)
 
 -- ================== PLAYER LOGIC ==================
 
--- Постоянное применение WalkSpeed и JumpPower
 RunService.Stepped:Connect(function()
     if LocalPlayer.Character and LocalPlayer.Character:FindFirstChildOfClass("Humanoid") then
         local hum = LocalPlayer.Character:FindFirstChildOfClass("Humanoid")
-        hum.WalkSpeed = Nexus.Settings.WalkSpeed
-        hum.JumpPower = Nexus.Settings.JumpPower
+        if Nexus.Settings.WalkSpeedChanged then
+            hum.WalkSpeed = Nexus.Settings.WalkSpeed
+        end
+        if Nexus.Settings.JumpPowerChanged then
+            hum.JumpPower = Nexus.Settings.JumpPower
+        end
     end
 end)
 
--- Infinite Jump
 UserInputService.JumpRequest:Connect(function()
     if Nexus.Settings.InfiniteJump and LocalPlayer.Character and LocalPlayer.Character:FindFirstChildOfClass("Humanoid") then
         LocalPlayer.Character:FindFirstChildOfClass("Humanoid"):ChangeState(Enum.HumanoidStateType.Jumping)
     end
 end)
 
--- Reset Character
 function Nexus.ResetCharacter()
     if LocalPlayer.Character and LocalPlayer.Character:FindFirstChildOfClass("Humanoid") then
         LocalPlayer.Character:FindFirstChildOfClass("Humanoid").Health = 0
     end
 end
 
--- ================== VISUALS LOGIC (ESP) ==================
+-- ================== VISUALS (ESP) ==================
 
 local ESP_Storage = {}
-
 local function createESP(player)
     if player == LocalPlayer then return end
-
     local box = Drawing.new("Square")
     box.Visible = false
     box.Color = Color3.fromRGB(0, 255, 136)
     box.Thickness = 1
     box.Filled = false
-
     local name = Drawing.new("Text")
     name.Visible = false
     name.Color = Color3.fromRGB(255, 255, 255)
     name.Size = 14
     name.Center = true
     name.Outline = true
-
     local tracer = Drawing.new("Line")
     tracer.Visible = false
     tracer.Color = Color3.fromRGB(0, 255, 136)
     tracer.Thickness = 1
-
     ESP_Storage[player] = {Box = box, Name = name, Tracer = tracer}
 end
 
@@ -266,9 +258,7 @@ RunService.RenderStepped:Connect(function()
             local hrp = player.Character.HumanoidRootPart
             local pos, onScreen = Camera:WorldToViewportPoint(hrp.Position)
             local dist = (Camera.CFrame.Position - hrp.Position).Magnitude
-
             if onScreen and dist <= Nexus.Settings.MaxDistance then
-                -- Name ESP
                 if Nexus.Settings.NameESP then
                     objs.Name.Position = Vector2.new(pos.X, pos.Y - 40)
                     objs.Name.Text = player.Name .. " [" .. math.floor(dist) .. "m]"
@@ -276,8 +266,6 @@ RunService.RenderStepped:Connect(function()
                 else
                     objs.Name.Visible = false
                 end
-
-                -- Box ESP
                 if Nexus.Settings.BoxESP then
                     local size = (Camera:WorldToViewportPoint(hrp.Position + Vector3.new(0, 3, 0)).Y - Camera:WorldToViewportPoint(hrp.Position - Vector3.new(0, 4, 0)).Y)
                     objs.Box.Size = Vector2.new(size / 1.5, size)
@@ -286,8 +274,6 @@ RunService.RenderStepped:Connect(function()
                 else
                     objs.Box.Visible = false
                 end
-
-                -- Tracers
                 if Nexus.Settings.Tracers then
                     objs.Tracer.From = Vector2.new(Camera.ViewportSize.X / 2, Camera.ViewportSize.Y)
                     objs.Tracer.To = Vector2.new(pos.X, pos.Y)
@@ -308,9 +294,8 @@ RunService.RenderStepped:Connect(function()
     end
 end)
 
--- ================== MISC LOGIC ==================
+-- ================== MISC ==================
 
--- Anti-AFK
 LocalPlayer.Idled:Connect(function()
     if Nexus.Settings.AntiAFK then
         VirtualUser:Button2Down(Vector2.new(0,0), workspace.CurrentCamera.CFrame)
@@ -319,13 +304,9 @@ LocalPlayer.Idled:Connect(function()
     end
 end)
 
--- Rejoin Server
 function Nexus.RejoinServer()
     TeleportService:Teleport(game.PlaceId, LocalPlayer)
 end
 
--- ================== ЭКСПОРТ ГЛОБАЛЬНОЙ ТАБЛИЦЫ ==================
-
 _G.Nexus = Nexus
-
 print("Nexus script loaded. Ready.")
